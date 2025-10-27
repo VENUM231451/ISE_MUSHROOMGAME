@@ -22,6 +22,21 @@ SHIELD_HIT_COST_FRAMES = int(SHIELD_DURATION_FRAMES * 0.25)  # Shield reduces by
 COLLECT_FLASH_DURATION = 8
 HIT_FLASH_DURATION = 16
 
+UI_COLORS = {
+    "panel": (34, 52, 96),
+    "panel_alt": (60, 36, 72),
+    "accent": (130, 190, 255),
+    "accent_alt": (255, 180, 120),
+    "danger": (255, 120, 150),
+    "success": (130, 220, 190),
+    "bg_top": (14, 20, 34),
+    "bg_bottom": (4, 8, 18),
+}
+
+# Screen FX tuning
+COLLECT_FLASH_DURATION = 8
+HIT_FLASH_DURATION = 16
+
 LIVES_START = 3        # Much more forgiving
 MUSHROOM_FALL_SPEED = 3.5  # Faster base falling speed
 LEVEL1_MAX_CONCURRENT = 2  # Max mushrooms falling at once
