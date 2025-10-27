@@ -1,4 +1,4 @@
-import pygame, sys, random, os
+import pygame, sys, random, os, math
 
 # Game Settings
 WIDTH, HEIGHT = 1920, 1076
@@ -17,6 +17,10 @@ DASH_SPEED = 15        # Faster dash
 DASH_COOLDOWN_FRAMES = 15 * FPS  # 15-second cooldown
 SHIELD_DURATION_FRAMES = 600  # Increased from 420
 SHIELD_HIT_COST_FRAMES = int(SHIELD_DURATION_FRAMES * 0.25)  # Shield reduces by ~25% per hit
+
+# Screen FX tuning
+COLLECT_FLASH_DURATION = 8
+HIT_FLASH_DURATION = 16
 
 LIVES_START = 3        # Much more forgiving
 MUSHROOM_FALL_SPEED = 3.5  # Faster base falling speed
@@ -363,6 +367,10 @@ next_monster_spawn = MONSTER_SPAWN_DISTANCE
 next_powerup_spawn = POWERUP_SPAWN_DISTANCE
 particles = []        # Particle effects list
 distance_score_carry = 0.0  # Accumulates distance towards score points
+ambient_spore_timer = 0
+trail_emit_timer = 0
+collect_flash_timer = 0
+hit_flash_timer = 0
 
 # Level 1 Variables
 basket = basket_img.get_rect(midbottom=(WIDTH//2, HEIGHT-10))
@@ -426,12 +434,39 @@ def spawn_powerup(distance, powerup_type):
     elif powerup_type == "shield":
         return pygame.Rect(WIDTH + distance, GROUND_Y-50, 24, 24)
 
-def create_particle(x, y, color, velocity=(0, 0), life=30):
-    """Create a particle effect"""
+def create_particle(
+    x,
+    y,
+    color,
+    velocity=(0, 0),
+    life=30,
+    size_range=(2, 6),
+    gravity=0.2,
+    fade=True,
+    shrink=True,
+    friction=0.96,
+    kind="spark",
+    color_end=None,
+):
+    """Create a particle effect with configurable behaviour."""
+    size_min, size_max = size_range if isinstance(size_range, (tuple, list)) else (size_range, size_range)
+    size = random.randint(int(size_min), int(size_max))
+    vx, vy = velocity
     return {
-        "x": x, "y": y, "vx": velocity[0] + random.uniform(-2, 2),
-        "vy": velocity[1] + random.uniform(-3, -1), "color": color,
-        "life": life, "max_life": life, "size": random.randint(2, 6)
+        "x": x,
+        "y": y,
+        "vx": vx + random.uniform(-1.5, 1.5),
+        "vy": vy + random.uniform(-1.2, 1.2),
+        "color": color,
+        "color_end": color_end,
+        "life": life,
+        "max_life": life,
+        "size": size,
+        "gravity": gravity,
+        "fade": fade,
+        "shrink": shrink,
+        "friction": friction,
+        "kind": kind,
     }
 
 def update_particles():
@@ -440,7 +475,18 @@ def update_particles():
     for particle in particles[:]:
         particle["x"] += particle["vx"]
         particle["y"] += particle["vy"]
-        particle["vy"] += 0.2  # Gravity
+        particle["vx"] *= particle.get("friction", 1.0)
+        particle["vy"] += particle.get("gravity", 0)
+
+        if particle["kind"] == "spore":
+            particle["vx"] += math.sin(particle["life"] * 0.08) * 0.05
+            particle["vy"] += math.cos(particle["life"] * 0.05) * 0.02
+        elif particle["kind"] == "ember":
+            particle["vx"] += random.uniform(-0.05, 0.05)
+            particle["vy"] -= 0.02
+        elif particle["kind"] == "dust":
+            particle["vx"] *= 0.94
+
         particle["life"] -= 1
         if particle["life"] <= 0:
             particles.remove(particle)
@@ -448,11 +494,42 @@ def update_particles():
 def draw_particles(screen):
     """Draw all particle effects"""
     for particle in particles:
-        alpha = int(255 * (particle["life"] / particle["max_life"]))
-        size = int(particle["size"] * (particle["life"] / particle["max_life"]))
-        if size > 0:
-            color = (*particle["color"], alpha)
-            pygame.draw.circle(screen, particle["color"], (int(particle["x"]), int(particle["y"])), size)
+        life_ratio = particle["life"] / particle["max_life"] if particle["max_life"] else 0
+        base_color = particle["color"]
+        if particle.get("color_end"):
+            end_color = particle["color_end"]
+            blend = 1 - life_ratio
+            color = tuple(
+                int(base_color[i] + (end_color[i] - base_color[i]) * blend) for i in range(3)
+            )
+        else:
+            color = base_color
+
+        alpha = int(255 * life_ratio) if particle.get("fade", True) else 255
+        size = particle["size"]
+        if particle.get("shrink", True):
+            size = max(1, int(size * life_ratio))
+
+        if size <= 0 or alpha <= 0:
+            continue
+
+        if particle["kind"] in ("dust", "dash"):
+            surf = pygame.Surface((size * 3, size * 2), pygame.SRCALPHA)
+            rect = surf.get_rect()
+            pygame.draw.ellipse(
+                surf,
+                (*color, alpha),
+                (rect.width // 6, rect.height // 4, rect.width * 2 // 3, rect.height // 2),
+            )
+            screen.blit(surf, (particle["x"] - rect.width // 2, particle["y"] - rect.height // 2))
+        else:
+            surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*color, alpha), (size, size), size)
+            if particle["kind"] == "spore":
+                glow = pygame.Surface((size * 4, size * 4), pygame.SRCALPHA)
+                pygame.draw.circle(glow, (*color, max(10, alpha // 4)), (glow.get_width() // 2, glow.get_height() // 2), glow.get_width() // 2)
+                screen.blit(glow, (particle["x"] - glow.get_width() // 2, particle["y"] - glow.get_height() // 2))
+            screen.blit(surf, (particle["x"] - size, particle["y"] - size))
 
 # Initialize Level 1
 mushrooms.append(spawn_mushroom())
@@ -491,7 +568,8 @@ def next_powerup_gap():
 
 # Add helper to start Level 1 consistently from keyboard or mouse
 def start_level1():
-    global score, lives, mushrooms, next_mushroom_spawn_timer, basket, state, particles, paused, distance_score_carry
+    global score, lives, mushrooms, next_mushroom_spawn_timer, basket, state, particles, paused
+    global distance_score_carry, ambient_spore_timer, trail_emit_timer, collect_flash_timer, hit_flash_timer
     score = 0
     lives = LIVES_START
     mushrooms = []
@@ -500,6 +578,10 @@ def start_level1():
     mushrooms.append(spawn_mushroom())
     particles = []
     distance_score_carry = 0.0
+    ambient_spore_timer = 0
+    trail_emit_timer = 0
+    collect_flash_timer = 0
+    hit_flash_timer = 0
     paused = False
     state = LEVEL1
 
@@ -561,8 +643,53 @@ while running:
         hovered = start_rect.collidepoint(pygame.mouse.get_pos())
         draw_button(screen, start_rect, "Start", hovered)
         draw_controls_pill(screen, "[ENTER] or click START   [ESC] Quit", WIDTH//2 - 380, HEIGHT - 60, 760)
+        ambient_spore_timer -= 1
+        if ambient_spore_timer <= 0:
+            spawn_x = random.uniform(60, WIDTH - 60)
+            spawn_y = random.uniform(HEIGHT * 0.2, HEIGHT * 0.75)
+            particles.append(
+                create_particle(
+                    spawn_x,
+                    spawn_y,
+                    (190, 220, 255),
+                    velocity=(random.uniform(-0.25, 0.25), random.uniform(-0.1, 0.1)),
+                    life=random.randint(110, 160),
+                    size_range=(3, 6),
+                    gravity=-0.004,
+                    fade=True,
+                    shrink=False,
+                    friction=0.99,
+                    kind="spore",
+                    color_end=(140, 180, 255),
+                )
+            )
+            ambient_spore_timer = random.randint(10, 24)
+        update_particles()
+        draw_particles(screen)
 
     elif state == LEVEL1:
+        ambient_spore_timer -= 1
+        if ambient_spore_timer <= 0:
+            spawn_x = random.uniform(40, WIDTH - 40)
+            spawn_y = random.uniform(HEIGHT * 0.12, HEIGHT * 0.55)
+            particles.append(
+                create_particle(
+                    spawn_x,
+                    spawn_y,
+                    (200, 240, 255),
+                    velocity=(random.uniform(-0.4, 0.4), random.uniform(-0.2, 0.2)),
+                    life=random.randint(90, 140),
+                    size_range=(3, 6),
+                    gravity=-0.006,
+                    fade=True,
+                    shrink=False,
+                    friction=0.985,
+                    kind="spore",
+                    color_end=(160, 200, 255),
+                )
+            )
+            ambient_spore_timer = random.randint(6, 16)
+
         # Update basket movement
         if keys[pygame.K_LEFT]:
             basket.x -= 10
@@ -588,12 +715,60 @@ while running:
             if m_hit.colliderect(basket_hit):
                 score += 1
                 if collect_snd: collect_snd.play()
-                for _ in range(12):
-                    particles.append(create_particle(m["rect"].centerx, m["rect"].centery, (255, 220, 120)))
+                collect_flash_timer = COLLECT_FLASH_DURATION
+                burst_center = (m["rect"].centerx, m["rect"].centery)
+                for _ in range(18):
+                    particles.append(
+                        create_particle(
+                            burst_center[0],
+                            burst_center[1],
+                            (255, 220, 120),
+                            velocity=(random.uniform(-1.5, 1.5), random.uniform(-3.5, 0.5)),
+                            life=random.randint(28, 40),
+                            size_range=(3, 6),
+                            gravity=0.18,
+                            kind="spark",
+                            color_end=(255, 160, 40),
+                        )
+                    )
+                for angle in range(0, 360, 45):
+                    radians = math.radians(angle)
+                    particles.append(
+                        create_particle(
+                            burst_center[0] + math.cos(radians) * 30,
+                            burst_center[1] + math.sin(radians) * 30,
+                            (255, 240, 180),
+                            velocity=(math.cos(radians) * 1.5, math.sin(radians) * 1.5),
+                            life=36,
+                            size_range=(2, 4),
+                            gravity=-0.05,
+                            fade=True,
+                            shrink=False,
+                            friction=0.92,
+                            kind="spore",
+                            color_end=(180, 220, 255),
+                        )
+                    )
                 mushrooms.remove(m)
             elif m["rect"].top > HEIGHT:
                 lives -= 1
                 if miss_snd: miss_snd.play()
+                hit_flash_timer = HIT_FLASH_DURATION
+                miss_x = basket.centerx + random.uniform(-80, 80)
+                for _ in range(12):
+                    particles.append(
+                        create_particle(
+                            miss_x,
+                            GROUND_Y,
+                            (255, 120, 120),
+                            velocity=(random.uniform(-1.2, 1.2), random.uniform(-2.5, -0.5)),
+                            life=30,
+                            size_range=(3, 5),
+                            gravity=0.25,
+                            kind="dust",
+                            color_end=(200, 60, 60),
+                        )
+                    )
                 mushrooms.remove(m)
 
         # Game Over check for Level 1
@@ -617,6 +792,10 @@ while running:
             shield_timer = 0
             particles = []
             distance_score_carry = 0.0
+            ambient_spore_timer = 0
+            trail_emit_timer = 0
+            collect_flash_timer = 0
+            hit_flash_timer = 0
             state = LEVEL2
 
         # Draw Level 1
@@ -643,6 +822,28 @@ while running:
         draw_controls_pill(screen, "[LEFT/RIGHT] Move   [ESC] Quit", WIDTH//2 - 360, HEIGHT - 60, 720)
 
     elif state == LEVEL2:
+        ambient_spore_timer -= 1
+        if ambient_spore_timer <= 0:
+            spawn_x = random.uniform(0, WIDTH)
+            spawn_y = random.uniform(HEIGHT * 0.05, HEIGHT * 0.45)
+            particles.append(
+                create_particle(
+                    spawn_x,
+                    spawn_y,
+                    (150, 210, 255),
+                    velocity=(random.uniform(-0.6, 0.6) - runner_speed * 0.03, random.uniform(-0.15, 0.15)),
+                    life=random.randint(110, 160),
+                    size_range=(3, 6),
+                    gravity=-0.004,
+                    fade=True,
+                    shrink=False,
+                    friction=0.988,
+                    kind="spore",
+                    color_end=(120, 180, 255),
+                )
+            )
+            ambient_spore_timer = random.randint(5, 12)
+
         # Scrolling background
         bg_scroll_x -= runner_speed
         if bg_scroll_x <= -WIDTH:
@@ -655,6 +856,7 @@ while running:
             distance_score_carry -= DISTANCE_SCORE_UNIT
 
         # Player jump
+        was_on_ground = on_ground
         if keys[pygame.K_SPACE] and on_ground:
             player_vy = PLAYER_JUMP_SPEED
             on_ground = False
@@ -664,6 +866,23 @@ while running:
             player_vy = PLAYER_JUMP_SPEED * 1.5
             dash_cd = DASH_COOLDOWN_FRAMES
             if dash_snd: dash_snd.play()
+            for _ in range(24):
+                particles.append(
+                    create_particle(
+                        player.centerx,
+                        player.centery + 10,
+                        (140, 220, 255),
+                        velocity=(random.uniform(-3, 3), random.uniform(-4, -1)),
+                        life=random.randint(24, 36),
+                        size_range=(3, 6),
+                        gravity=0.22,
+                        fade=True,
+                        shrink=False,
+                        friction=0.9,
+                        kind="dash",
+                        color_end=(30, 140, 255),
+                    )
+                )
 
         # Gravity & ground collision
         player_vy += GRAVITY
@@ -672,10 +891,76 @@ while running:
             player.bottom = GROUND_Y
             player_vy = 0
             on_ground = True
+        else:
+            on_ground = False
+
+        if not was_on_ground and on_ground:
+            for offset in (-18, 18):
+                particles.append(
+                    create_particle(
+                        player.centerx + offset,
+                        GROUND_Y,
+                        (220, 210, 180),
+                        velocity=(offset * 0.08 - runner_speed * 0.35, random.uniform(-3.2, -1.2)),
+                        life=34,
+                        size_range=(4, 7),
+                        gravity=0.36,
+                        fade=True,
+                        shrink=True,
+                        friction=0.92,
+                        kind="dust",
+                        color_end=(150, 120, 90),
+                    )
+                )
+
+        if on_ground:
+            trail_emit_timer = max(0, trail_emit_timer - 1)
+            if trail_emit_timer <= 0 and runner_speed > RUNNER_SPEED + 0.5:
+                particles.append(
+                    create_particle(
+                        player.centerx - player.width // 3,
+                        GROUND_Y - 4,
+                        (210, 200, 160),
+                        velocity=(-runner_speed * 0.45 - 0.5, random.uniform(-2.0, -0.8)),
+                        life=26,
+                        size_range=(3, 5),
+                        gravity=0.3,
+                        fade=True,
+                        shrink=True,
+                        friction=0.9,
+                        kind="dust",
+                        color_end=(140, 120, 90),
+                    )
+                )
+                trail_emit_timer = max(4, int(14 - runner_speed))
+        else:
+            trail_emit_timer = 0
 
         # Dash cooldown tick
         if dash_cd > 0:
             dash_cd -= 1
+
+        if shield_timer > 0 and random.random() < 0.3:
+            angle = random.uniform(0, math.tau)
+            radius = random.uniform(20, 34)
+            px = player.centerx + math.cos(angle) * radius
+            py = player.centery + math.sin(angle) * radius
+            particles.append(
+                create_particle(
+                    px,
+                    py,
+                    (130, 200, 255),
+                    velocity=(math.cos(angle) * 0.6, math.sin(angle) * 0.6),
+                    life=28,
+                    size_range=(2, 4),
+                    gravity=0,
+                    fade=True,
+                    shrink=False,
+                    friction=0.92,
+                    kind="spore",
+                    color_end=(60, 160, 255),
+                )
+            )
 
         # Spawn monsters
         next_monster_spawn -= runner_speed
@@ -692,10 +977,45 @@ while running:
                 if shield_timer > 0:
                     # Shield absorbs the hit but loses part of its duration
                     shield_timer = max(0, shield_timer - SHIELD_HIT_COST_FRAMES)
+                    for _ in range(10):
+                        particles.append(
+                            create_particle(
+                                player.centerx,
+                                player.centery,
+                                (160, 220, 255),
+                                velocity=(random.uniform(-2.0, 2.0), random.uniform(-2.5, 0.5)),
+                                life=26,
+                                size_range=(2, 4),
+                                gravity=0.1,
+                                fade=True,
+                                shrink=False,
+                                friction=0.9,
+                                kind="spore",
+                                color_end=(80, 160, 255),
+                            )
+                        )
                     monsters.remove(monster)
                 else:
                     lives -= 1
                     if hit_snd: hit_snd.play()
+                    hit_flash_timer = HIT_FLASH_DURATION
+                    for _ in range(16):
+                        particles.append(
+                            create_particle(
+                                player.centerx,
+                                player.centery,
+                                (255, 120, 120),
+                                velocity=(random.uniform(-2.5, 2.5), random.uniform(-3.5, 1.0)),
+                                life=32,
+                                size_range=(3, 5),
+                                gravity=0.25,
+                                fade=True,
+                                shrink=True,
+                                friction=0.9,
+                                kind="spark",
+                                color_end=(255, 60, 60),
+                            )
+                        )
                     monsters.remove(monster)
 
         # Spawn powerups
@@ -717,6 +1037,24 @@ while running:
             elif heart.colliderect(player):
                 lives = min(lives + 1, LIVES_START)
                 if collect_snd: collect_snd.play()
+                collect_flash_timer = COLLECT_FLASH_DURATION
+                for _ in range(14):
+                    particles.append(
+                        create_particle(
+                            heart.centerx,
+                            heart.centery,
+                            (255, 150, 180),
+                            velocity=(random.uniform(-2.0, 2.0), random.uniform(-2.5, 0.5)),
+                            life=30,
+                            size_range=(3, 6),
+                            gravity=0.15,
+                            fade=True,
+                            shrink=False,
+                            friction=0.9,
+                            kind="spark",
+                            color_end=(255, 200, 200),
+                        )
+                    )
                 hearts.remove(heart)
         for shield in shields[:]:
             shield.x -= int(runner_speed)
@@ -724,10 +1062,30 @@ while running:
                 shields.remove(shield)
             elif shield.colliderect(player):
                 shield_timer = SHIELD_DURATION_FRAMES
+                collect_flash_timer = COLLECT_FLASH_DURATION
+                for _ in range(16):
+                    particles.append(
+                        create_particle(
+                            shield.centerx,
+                            shield.centery,
+                            (120, 200, 255),
+                            velocity=(random.uniform(-1.5, 1.5), random.uniform(-2.0, 1.0)),
+                            life=32,
+                            size_range=(3, 5),
+                            gravity=0.1,
+                            fade=True,
+                            shrink=False,
+                            friction=0.92,
+                            kind="spore",
+                            color_end=(60, 150, 255),
+                        )
+                    )
                 shields.remove(shield)
 
         if shield_timer > 0:
             shield_timer -= 1
+
+        update_particles()
 
         # Game Over
         if lives <= 0:
@@ -775,7 +1133,7 @@ while running:
             pygame.draw.ellipse(screen, (0, 0, 0, 100), shadow_rect)
             screen.blit(monster_img, monster["rect"]) if monster_img else pygame.draw.rect(screen, (200, 50, 50), monster["rect"])
 
-        # draw_particles(screen)
+        draw_particles(screen)
 
         # HUD panels
         status_w, status_h = 360, 160
@@ -803,6 +1161,20 @@ while running:
         draw_text(screen, f"Score: {score}", 40, WIDTH//2, HEIGHT//2 - 20, (255,255,200))
         draw_text(screen, f"High Score: {highscore}", 30, WIDTH//2, HEIGHT//2 + 20, (200,255,200))
         draw_text(screen, "Press ENTER to return to menu", 25, WIDTH//2, HEIGHT//2 + 80, (255,255,255))
+
+    if collect_flash_timer > 0:
+        ratio = collect_flash_timer / COLLECT_FLASH_DURATION if COLLECT_FLASH_DURATION else 0
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((255, 220, 120, int(90 * ratio)))
+        screen.blit(overlay, (0, 0))
+        collect_flash_timer = max(0, collect_flash_timer - 1)
+
+    if hit_flash_timer > 0:
+        ratio = hit_flash_timer / HIT_FLASH_DURATION if HIT_FLASH_DURATION else 0
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((255, 60, 60, int(140 * ratio)))
+        screen.blit(overlay, (0, 0))
+        hit_flash_timer = max(0, hit_flash_timer - 1)
 
     pygame.display.flip()
 
