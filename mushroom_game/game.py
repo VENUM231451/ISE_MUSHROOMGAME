@@ -1,5 +1,4 @@
 import pygame, sys, random, os, math
-from functools import lru_cache
 
 # Game Settings
 WIDTH, HEIGHT = 1920, 1076
@@ -22,17 +21,6 @@ SHIELD_HIT_COST_FRAMES = int(SHIELD_DURATION_FRAMES * 0.25)  # Shield reduces by
 # Screen FX tuning
 COLLECT_FLASH_DURATION = 8
 HIT_FLASH_DURATION = 16
-
-UI_COLORS = {
-    "panel": (34, 52, 96),
-    "panel_alt": (60, 36, 72),
-    "accent": (130, 190, 255),
-    "accent_alt": (255, 180, 120),
-    "danger": (255, 120, 150),
-    "success": (130, 220, 190),
-    "bg_top": (14, 20, 34),
-    "bg_bottom": (4, 8, 18),
-}
 
 LIVES_START = 3        # Much more forgiving
 MUSHROOM_FALL_SPEED = 3.5  # Faster base falling speed
@@ -731,76 +719,14 @@ while running:
     keys = pygame.key.get_pressed()
 
     if state == MENU:
-        if menu_bg:
-            screen.blit(menu_bg, (0, 0))
-        else:
-            draw_vertical_gradient(screen, UI_COLORS["bg_top"], UI_COLORS["bg_bottom"])
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        draw_vertical_gradient(overlay, (10, 14, 24, 180), (4, 6, 16, 220))
-        screen.blit(overlay, (0, 0))
-
-        hero_rect, start_rect = get_menu_layout(WIDTH, HEIGHT)
-        draw_glass_panel(screen, hero_rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=28)
-        draw_text_shadow(screen, "Shroom Hunter", 76, hero_rect.centerx, hero_rect.y + 92, (255, 255, 255))
-        draw_text_shadow(
-            screen,
-            "Chase the spores. Outrun the dusk.",
-            28,
-            hero_rect.centerx,
-            hero_rect.y + 150,
-            (215, 230, 255),
-        )
-
+        screen.blit(menu_bg, (0, 0)) if menu_bg else screen.fill((30, 40, 60))
+        draw_text_shadow(screen, "Shroom Hunter", 72, WIDTH//2, HEIGHT//2 - 140)
+        draw_text(screen, f"High Score: {highscore}", 26, WIDTH//2, HEIGHT//2 - 70, (200,255,200))
+        # Start button UI (original style)
+        start_rect = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 + 50, 300, 70)
         hovered = start_rect.collidepoint(pygame.mouse.get_pos())
-        draw_button(screen, start_rect, "Start Adventure", hovered)
-
-        score_w = min(hero_rect.width, 480)
-        score_rect = pygame.Rect(WIDTH//2 - score_w//2, hero_rect.bottom + 24, score_w, 74)
-        draw_glass_panel(screen, score_rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=24)
-        high_label = get_font(16).render("HIGH SCORE", True, (200, 220, 255))
-        high_value = get_font(32).render(f"{highscore}", True, (255, 255, 255))
-        screen.blit(high_label, (score_rect.x + 24, score_rect.y + 18))
-        screen.blit(high_value, (score_rect.x + 24, score_rect.y + 38))
-        pygame.draw.line(
-            screen,
-            (170, 200, 255),
-            (score_rect.x + 24, score_rect.y + 32),
-            (score_rect.right - 24, score_rect.y + 32),
-            1,
-        )
-
-        info_bottom = score_rect.bottom
-        info_space = HEIGHT - info_bottom - 160
-        if info_space > 0:
-            info_h = 116
-            info_rect = pygame.Rect(WIDTH//2 - hero_rect.width//2, score_rect.bottom + 16, hero_rect.width, info_h)
-            draw_glass_panel(
-                screen,
-                info_rect,
-                base_color=UI_COLORS["panel_alt"],
-                border_color=UI_COLORS["accent_alt"],
-                radius=26,
-            )
-            bullet_font = get_font(18)
-            info_lines = [
-                f"Level 1 • Catch {LEVEL1_GOAL} glowing mushrooms",
-                "Level 2 • Dash through the endless grove",
-            ]
-            for i, line in enumerate(info_lines):
-                text = bullet_font.render(line, True, (245, 230, 255))
-                line_y = info_rect.y + 26 + i * 36
-                screen.blit(text, (info_rect.x + 46, line_y))
-                pygame.draw.circle(screen, UI_COLORS["accent_alt"], (info_rect.x + 24, line_y + 6), 6)
-
-        pill_w = int(min(WIDTH - 120, 860))
-        pill_y = HEIGHT - 78
-        draw_controls_pill(
-            screen,
-            "[ENTER] Start   [F11] Fullscreen   [ESC] Quit",
-            WIDTH//2 - pill_w//2,
-            pill_y,
-            pill_w,
-        )
+        draw_button(screen, start_rect, "Start", hovered)
+        draw_controls_pill(screen, "[ENTER] or click START   [ESC] Quit", WIDTH//2 - 380, HEIGHT - 60, 760)
         ambient_spore_timer -= 1
         if ambient_spore_timer <= 0:
             spawn_x = random.uniform(60, WIDTH - 60)
@@ -957,13 +883,7 @@ while running:
             state = LEVEL2
 
         # Draw Level 1
-        if level1_bg:
-            screen.blit(level1_bg, (0, 0))
-        else:
-            draw_vertical_gradient(screen, (42, 64, 108), (16, 24, 48))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        draw_vertical_gradient(overlay, (8, 16, 32, 120), (2, 4, 12, 180))
-        screen.blit(overlay, (0, 0))
+        screen.blit(level1_bg, (0, 0)) if level1_bg else screen.fill((120, 160, 200))
         for m in mushrooms:
             screen.blit(m["img"], m["rect"]) if m["img"] else pygame.draw.rect(screen, (220, 180, 100), m["rect"])
         screen.blit(basket_img, basket)
@@ -971,23 +891,19 @@ while running:
         draw_particles(screen)
 
         # HUD
-        draw_score_pill(screen, score, 30, 28)
+        draw_score_pill(screen, score, 30, 24)
+        # Top-right goal progress pill with responsive width and margin
         pill_margin = 24
-        goal_w = max(320, min(420, int(WIDTH * 0.24)))
-        goal_h = 116
+        goal_w = max(280, min(400, int(WIDTH * 0.22)))  # Increased width
+        goal_h = 60  # Increased height significantly for proper spacing
         goal_x = WIDTH - goal_w - pill_margin
         goal_y = pill_margin
         draw_goal_progress_pill(screen, goal_x, goal_y, goal_w, goal_h, score, LEVEL1_GOAL)
-        draw_lives_panel(screen, lives, heart_icon_small, 30, 120)
-        pill_w = int(min(WIDTH - 120, 780))
-        pill_y = HEIGHT - 78
-        draw_controls_pill(
-            screen,
-            "[LEFT/RIGHT] Move   [ESC] Quit   Catch every glow!",
-            WIDTH//2 - pill_w//2,
-            pill_y,
-            pill_w,
-        )
+        draw_lives_panel(screen, lives, heart_img, 30, 80)
+        pill_w = int(min(WIDTH - 120, 720))
+        pill_x = WIDTH//2 - pill_w//2
+        pill_y = HEIGHT - 60
+        draw_controls_pill(screen, "[LEFT/RIGHT] Move   [ESC] Quit", WIDTH//2 - 360, HEIGHT - 60, 720)
 
     elif state == LEVEL2:
         ambient_spore_timer -= 1
@@ -1309,29 +1225,12 @@ while running:
         draw_particles(screen)
 
         # HUD panels
-        status_w, status_h = 380, 190
+        status_w, status_h = 360, 160
         status_x, status_y = WIDTH - status_w - 30, 24
-        draw_status_panel(
-            screen,
-            status_x,
-            status_y,
-            lives,
-            LIVES_START,
-            shield_timer,
-            SHIELD_DURATION_FRAMES,
-            dash_cd,
-            DASH_COOLDOWN_FRAMES,
-            heart_icon_status,
-        )
+        draw_status_panel(screen, status_x, status_y, lives, LIVES_START, shield_timer, SHIELD_DURATION_FRAMES, dash_cd, DASH_COOLDOWN_FRAMES, heart_img)
         draw_metrics_strip(screen, runner_distance, score, runner_speed, x=30, y=24)
-        pill_w = int(min(WIDTH - 120, 820))
-        draw_controls_pill(
-            screen,
-            "[SPACE] Jump   [SHIFT] Air Dash   [P] Pause   [ESC] Quit",
-            WIDTH//2 - pill_w//2,
-            HEIGHT - 78,
-            pill_w,
-        )
+        pill_w = int(min(WIDTH - 120, 720))
+        draw_controls_pill(screen, "[SPACE] Jump   [P] Pause   [ESC] Quit", WIDTH//2 - pill_w//2, HEIGHT - 60, pill_w)
 
     elif state == GAMEOVER:
         # Auto-return to menu after short delay
@@ -1339,42 +1238,18 @@ while running:
             gameover_timer -= 1
             if gameover_timer <= 0:
                 state = MENU
-        draw_vertical_gradient(screen, (60, 20, 30), (20, 6, 12))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        draw_vertical_gradient(overlay, (0, 0, 0, 90), (0, 0, 0, 160))
-        screen.blit(overlay, (0, 0))
-
-        panel_rect = pygame.Rect(WIDTH//2 - 320, HEIGHT//2 - 170, 640, 260)
-        draw_glass_panel(screen, panel_rect, base_color=UI_COLORS["panel_alt"], border_color=UI_COLORS["danger"], radius=30)
-        draw_text_shadow(screen, "Game Over", 78, panel_rect.centerx, panel_rect.y + 100, (255, 225, 235))
-        draw_text_shadow(screen, f"Score {score}", 34, panel_rect.centerx, panel_rect.y + 152, (255, 240, 245))
-        draw_text_shadow(screen, f"High Score {highscore}", 26, panel_rect.centerx, panel_rect.y + 196, (255, 220, 230))
-
-        pill_w = int(min(WIDTH - 160, 520))
-        pill_y = panel_rect.bottom + 24
-        if pill_y + 60 < HEIGHT:
-            draw_controls_pill(screen, "[ENTER] Back to menu   [ESC] Quit", WIDTH//2 - pill_w//2, pill_y, pill_w)
-        else:
-            draw_text_shadow(screen, "[ENTER] Back to menu   [ESC] Quit", 24, WIDTH//2, panel_rect.bottom + 80, (240, 240, 240))
+        screen.fill((200, 100, 100))
+        draw_text(screen, "GAME OVER", 80, WIDTH//2, HEIGHT//2 - 100, (255,255,255))
+        draw_text(screen, f"Score: {score}", 40, WIDTH//2, HEIGHT//2 - 20, (255,255,200))
+        draw_text(screen, f"High Score: {highscore}", 30, WIDTH//2, HEIGHT//2 + 20, (200,255,200))
+        draw_text(screen, "Press ENTER to return to menu", 25, WIDTH//2, HEIGHT//2 + 80, (255,255,255))
 
     elif state == WIN:
-        draw_vertical_gradient(screen, (32, 72, 58), (12, 28, 20))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        draw_vertical_gradient(overlay, (0, 0, 0, 60), (0, 0, 0, 120))
-        screen.blit(overlay, (0, 0))
-
-        panel_rect = pygame.Rect(WIDTH//2 - 320, HEIGHT//2 - 170, 640, 260)
-        draw_glass_panel(screen, panel_rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["success"], radius=30)
-        draw_text_shadow(screen, "Victory!", 78, panel_rect.centerx, panel_rect.y + 100, (240, 255, 245))
-        draw_text_shadow(screen, f"Score {score}", 34, panel_rect.centerx, panel_rect.y + 152, (255, 255, 240))
-        draw_text_shadow(screen, f"High Score {highscore}", 26, panel_rect.centerx, panel_rect.y + 196, (220, 255, 235))
-
-        pill_w = int(min(WIDTH - 160, 520))
-        pill_y = panel_rect.bottom + 24
-        if pill_y + 60 < HEIGHT:
-            draw_controls_pill(screen, "[ENTER] Back to menu   [ESC] Quit", WIDTH//2 - pill_w//2, pill_y, pill_w)
-        else:
-            draw_text_shadow(screen, "[ENTER] Back to menu   [ESC] Quit", 24, WIDTH//2, panel_rect.bottom + 80, (240, 255, 240))
+        screen.fill((100, 200, 150))
+        draw_text(screen, "YOU WIN!", 80, WIDTH//2, HEIGHT//2 - 100, (255,255,255))
+        draw_text(screen, f"Score: {score}", 40, WIDTH//2, HEIGHT//2 - 20, (255,255,200))
+        draw_text(screen, f"High Score: {highscore}", 30, WIDTH//2, HEIGHT//2 + 20, (200,255,200))
+        draw_text(screen, "Press ENTER to return to menu", 25, WIDTH//2, HEIGHT//2 + 80, (255,255,255))
 
     if collect_flash_timer > 0:
         ratio = collect_flash_timer / COLLECT_FLASH_DURATION if COLLECT_FLASH_DURATION else 0
