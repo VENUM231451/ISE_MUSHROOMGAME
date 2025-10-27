@@ -61,211 +61,270 @@ def load_sound(name):
     except:
         return None
 
+def adjust_color(color, amount):
+    return tuple(max(0, min(255, c + amount)) for c in color)
+
+
+def draw_vertical_gradient(surface, top_color, bottom_color):
+    width, height = surface.get_size()
+    if height <= 0:
+        return
+    top = (*top_color, 255) if len(top_color) == 3 else top_color
+    bottom = (*bottom_color, 255) if len(bottom_color) == 3 else bottom_color
+    channels = len(top)
+    for y in range(height):
+        ratio = y / (height - 1) if height > 1 else 0
+        color = tuple(int(top[i] + (bottom[i] - top[i]) * ratio) for i in range(channels))
+        pygame.draw.line(surface, color, (0, y), (width, y))
+
+
+@lru_cache(maxsize=64)
+def get_font(size, bold=True):
+    return pygame.font.SysFont("arial", size, bold=bold)
+
+
+def draw_glass_panel(surface, rect, base_color=(34, 52, 96), border_color=None, radius=20, alpha=200, shadow=True):
+    rect = pygame.Rect(rect)
+    if shadow:
+        shadow_rect = rect.move(0, 6)
+        shadow_surface = pygame.Surface((shadow_rect.width, shadow_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow_surface, (0, 0, 0, 110), shadow_surface.get_rect(), border_radius=radius)
+        surface.blit(shadow_surface, shadow_rect.topleft)
+
+    panel = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    top = (*adjust_color(base_color, 45), alpha)
+    bottom = (*adjust_color(base_color, -30), alpha)
+    draw_vertical_gradient(panel, top, bottom)
+
+    if rect.width > 24 and rect.height > 24:
+        highlight = pygame.Surface((rect.width - 24, 10), pygame.SRCALPHA)
+        draw_vertical_gradient(highlight, (255, 255, 255, 90), (255, 255, 255, 0))
+        panel.blit(highlight, (12, 12))
+        lowlight = pygame.Surface((rect.width - 24, 12), pygame.SRCALPHA)
+        draw_vertical_gradient(lowlight, (0, 0, 0, 0), (0, 0, 0, 90))
+        panel.blit(lowlight, (12, rect.height - 18))
+
+    border = border_color if border_color else adjust_color(base_color, 80)
+    pygame.draw.rect(panel, (*border, 210), panel.get_rect(), width=2, border_radius=radius)
+
+    inner_rect = panel.get_rect().inflate(-12, -12)
+    if inner_rect.width > 0 and inner_rect.height > 0:
+        pygame.draw.rect(panel, (255, 255, 255, 40), inner_rect, width=1, border_radius=max(4, radius - 6))
+
+    surface.blit(panel, rect.topleft)
+
+
 def draw_text(surf, text, size, x, y, color=(255,255,255)):
-    font = pygame.font.SysFont("arial", size, bold=True)
+    font = get_font(size, bold=True)
     txt = font.render(text, True, color)
     rect = txt.get_rect(center=(x, y))
     surf.blit(txt, rect)
     return rect
 
 def draw_health_bar(surf, x, y, w, h, value, max_value, color=(255,60,60)):
-    # Background
-    pygame.draw.rect(surf, (60,60,60), (x, y, w, h))
-    # Fill
-    fill_w = int((value / max_value) * w) if max_value > 0 else 0
-    pygame.draw.rect(surf, color, (x, y, fill_w, h))
-    # Border
-    pygame.draw.rect(surf, (200,200,200), (x, y, w, h), 2)
+    pygame.draw.rect(surf, (20, 28, 44), (x, y, w, h), border_radius=6)
+    fill_ratio = (value / max_value) if max_value > 0 else 0
+    fill_w = int(max(0.0, min(1.0, fill_ratio)) * w)
+    if fill_w > 0:
+        fill = pygame.Surface((fill_w, h), pygame.SRCALPHA)
+        draw_vertical_gradient(fill, (255, 150, 170, 230), (200, 70, 110, 230))
+        surf.blit(fill, (x, y))
+        highlight_h = max(2, h // 2)
+        if fill_w > 4:
+            pygame.draw.rect(surf, (255, 255, 255, 40), (x + 2, y + 2, fill_w - 4, highlight_h), border_radius=4)
+    pygame.draw.rect(surf, (255, 200, 220), (x, y, w, h), 2, border_radius=6)
+
 
 def draw_shield_bar(surf, x, y, w, h, value, max_value):
-    # Background
-    pygame.draw.rect(surf, (60,60,60), (x, y, w, h))
-    # Fill
-    fill_w = int((value / max_value) * w) if max_value > 0 else 0
-    pygame.draw.rect(surf, (60,120,255), (x, y, fill_w, h))
-    # Border
-    pygame.draw.rect(surf, (200,200,200), (x, y, w, h), 2)
+    pygame.draw.rect(surf, (18, 26, 40), (x, y, w, h), border_radius=6)
+    fill_ratio = (value / max_value) if max_value > 0 else 0
+    fill_w = int(max(0.0, min(1.0, fill_ratio)) * w)
+    if fill_w > 0:
+        fill = pygame.Surface((fill_w, h), pygame.SRCALPHA)
+        draw_vertical_gradient(fill, (140, 210, 255, 230), (60, 140, 230, 230))
+        surf.blit(fill, (x, y))
+        highlight_h = max(2, h // 2)
+        if fill_w > 4:
+            pygame.draw.rect(surf, (255, 255, 255, 40), (x + 2, y + 2, fill_w - 4, highlight_h), border_radius=4)
+    pygame.draw.rect(surf, (150, 210, 255), (x, y, w, h), 2, border_radius=6)
 
-# Dash cooldown bar helper
-# Shows remaining cooldown as a draining bar; when ready, turns green.
+
 def draw_dash_bar(surf, x, y, w, h, value, max_value):
-    # Background
-    pygame.draw.rect(surf, (60,60,60), (x, y, w, h))
-    # Fill is proportional to remaining cooldown
+    pygame.draw.rect(surf, (18, 26, 40), (x, y, w, h), border_radius=6)
     if max_value > 0:
         fill_ratio = max(0.0, min(1.0, value / max_value))
     else:
         fill_ratio = 0.0
     fill_w = int(fill_ratio * w)
-    color = (0, 200, 200) if value > 0 else (80, 220, 120)
-    pygame.draw.rect(surf, color, (x, y, fill_w, h))
-    # Border
-    pygame.draw.rect(surf, (200,200,200), (x, y, w, h), 2)
-    # Optional READY hint when off cooldown
+    if value > 0 and fill_w > 0:
+        base = pygame.Surface((fill_w, h), pygame.SRCALPHA)
+        draw_vertical_gradient(base, (120, 160, 255, 220), (40, 80, 210, 220))
+        surf.blit(base, (x, y))
+        highlight_h = max(2, h // 2)
+        if fill_w > 4:
+            pygame.draw.rect(surf, (255, 255, 255, 40), (x + 2, y + 2, fill_w - 4, highlight_h), border_radius=4)
+    elif value <= 0:
+        ready_surface = pygame.Surface((w, h), pygame.SRCALPHA)
+        draw_vertical_gradient(ready_surface, (110, 220, 160, 220), (70, 180, 130, 220))
+        surf.blit(ready_surface, (x, y))
+        highlight_h = max(2, h // 2)
+        pygame.draw.rect(surf, (255, 255, 255, 40), (x + 2, y + 2, w - 4, highlight_h), border_radius=4)
+    pygame.draw.rect(surf, (170, 200, 255), (x, y, w, h), 2, border_radius=6)
     if value <= 0:
-        font = pygame.font.SysFont("arial", 16, bold=True)
-        txt = font.render("READY", True, (240,255,240))
+        font = get_font(16)
+        txt = font.render("READY", True, (230, 255, 240))
         surf.blit(txt, txt.get_rect(center=(x + w//2, y + h//2)))
 
-# Modern UI helpers for Level 2 HUD
-def draw_status_panel(surf, x, y, lives, lives_max, shield_timer, shield_max, dash_cd, dash_max, heart_img):
-    w, h = 360, 160
-    panel = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(panel, (20, 20, 30, 180), (0, 0, w, h), border_radius=12)
-    pygame.draw.rect(panel, (100, 100, 140, 200), (0, 0, w, h), width=2, border_radius=12)
 
-    # Spacing and sizes
-    icon_size = 20
-    font_size = 16
-    left_margin = 16
-    label_center_x = 180
+def draw_status_panel(surf, x, y, lives, lives_max, shield_timer, shield_max, dash_cd, dash_max, heart_icon):
+    w, h = 380, 190
+    panel_rect = pygame.Rect(x, y, w, h)
+    draw_glass_panel(surf, panel_rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=26)
 
-    # Health row
-    if heart_img:
-        try:
-            heart_small = pygame.transform.smoothscale(heart_img, (icon_size, icon_size))
-        except Exception:
-            heart_small = None
-        if heart_small:
-            panel.blit(heart_small, (left_margin, 10))
-    draw_text_shadow(panel, f"Health {lives}/{lives_max}", font_size, label_center_x, 20, (255,255,255))
-    draw_health_bar(panel, left_margin, 36, w - 2*left_margin, 12, lives, lives_max)
+    label_font = get_font(16)
+    value_font = get_font(20)
+    icon_x = panel_rect.x + 24
+    label_x = panel_rect.x + 66
+    bar_x = panel_rect.x + 66
+    bar_w = panel_rect.width - 110
+    row_y = panel_rect.y + 32
 
-    # Shield row (simple icon)
-    pygame.draw.circle(panel, (90,160,255), (left_margin + 11, 70), 10, 2)
+    if heart_icon:
+        icon_surface = heart_icon if heart_icon.get_size() == (26, 26) else pygame.transform.smoothscale(heart_icon, (26, 26))
+        surf.blit(icon_surface, (icon_x, row_y - 10))
+    surf.blit(label_font.render("HEALTH", True, (255, 210, 220)), (label_x, row_y - 10))
+    value_text = value_font.render(f"{lives}/{lives_max}", True, (255, 245, 250))
+    surf.blit(value_text, (panel_rect.right - value_text.get_width() - 24, row_y - 10))
+    draw_health_bar(surf, bar_x, row_y + 12, bar_w, 16, lives, lives_max)
+
+    row_y += 60
+    shield_center = (icon_x + 12, row_y)
+    pygame.draw.circle(surf, (140, 200, 255), shield_center, 12, 2)
+    surf.blit(label_font.render("SHIELD", True, (210, 230, 255)), (label_x, row_y - 10))
     shield_seconds = max(0, shield_timer // FPS)
-    draw_text_shadow(panel, f"Shield {shield_seconds}s", font_size, label_center_x, 70, (220,240,255))
-    draw_shield_bar(panel, left_margin, 86, w - 2*left_margin, 12, shield_timer, shield_max)
+    shield_text = value_font.render(f"{shield_seconds}s", True, (210, 235, 255))
+    surf.blit(shield_text, (panel_rect.right - shield_text.get_width() - 24, row_y - 10))
+    draw_shield_bar(surf, bar_x, row_y + 12, bar_w, 16, shield_timer, shield_max)
 
-    # Dash row (simple lightning icon)
-    bolt_points = [(left_margin + 8, 112), (left_margin + 18, 96), (left_margin + 12, 96), (left_margin + 22, 82), (left_margin + 16, 100), (left_margin + 22, 100)]
-    pygame.draw.polygon(panel, (255, 230, 120), bolt_points)
-    dash_label = "Dash READY" if dash_cd <= 0 else f"Dash {max(0, dash_cd // FPS)}s"
-    draw_text_shadow(panel, dash_label, font_size, label_center_x, 112, (255,230,180))
-    draw_dash_bar(panel, left_margin, 128, w - 2*left_margin, 12, dash_cd, dash_max)
-
-    surf.blit(panel, (x, y))
+    row_y += 60
+    lightning = pygame.Surface((26, 26), pygame.SRCALPHA)
+    pygame.draw.polygon(
+        lightning,
+        (255, 210, 150),
+        [(12, 0), (20, 0), (14, 12), (24, 12), (8, 26), (14, 14)],
+    )
+    surf.blit(lightning, (icon_x, row_y - 12))
+    dash_label = "DASH READY" if dash_cd <= 0 else "DASH"
+    dash_color = (200, 240, 200) if dash_cd <= 0 else (255, 235, 200)
+    surf.blit(label_font.render(dash_label, True, dash_color), (label_x, row_y - 10))
+    dash_value = "Ready" if dash_cd <= 0 else f"{max(0, dash_cd // FPS)}s"
+    dash_text = value_font.render(dash_value, True, (235, 245, 255))
+    surf.blit(dash_text, (panel_rect.right - dash_text.get_width() - 24, row_y - 10))
+    draw_dash_bar(surf, bar_x, row_y + 12, bar_w, 16, dash_cd, dash_max)
 
 
 def draw_metrics_strip(surf, distance, score, speed, x=30, y=24):
-    w, h = 480, 36
-    shadow = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0, 0, 0, 80), (0, 0, w, h), border_radius=18)
-    surf.blit(shadow, (x + 2, y + 3))
-    pill = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(pill, (24, 28, 48, 200), (0, 0, w, h), border_radius=18)
-    pygame.draw.rect(pill, (110, 130, 200, 220), (0, 0, w, h), width=2, border_radius=18)
-    # Removed left accent stripe for a cleaner look
-    font = pygame.font.SysFont("arial", 20, bold=True)
-    text = f"Distance {int(distance)}    Score {score}    Speed {speed:.1f}"
-    txt = font.render(text, True, (240, 245, 255))
-    pill.blit(txt, (18, h // 2 - txt.get_height() // 2))
-    surf.blit(pill, (x, y))
+    available = max(360, surf.get_width() - x - 30)
+    w, h = min(520, available), 66
+    rect = pygame.Rect(x, y, w, h)
+    draw_glass_panel(surf, rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=28)
+    label_font = get_font(16)
+    info_font = get_font(22)
+    label = label_font.render("ENDLESS RUN • STATUS", True, (190, 210, 250))
+    surf.blit(label, (rect.x + 22, rect.y + 10))
+    text = f"Distance {int(distance):,}    •    Score {score}    •    Speed {speed:.1f}"
+    info = info_font.render(text, True, (240, 245, 255))
+    surf.blit(info, (rect.x + 22, rect.y + 32))
 
 
 def draw_controls_pill(surf, text, x, y, w):
-    h = 42
-    shadow = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0, 0, 0, 70), (0, 0, w, h), border_radius=21)
-    surf.blit(shadow, (x + 2, y + 3))
-    pill = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(pill, (22, 22, 32, 180), (0, 0, w, h), border_radius=21)
-    pygame.draw.rect(pill, (120, 120, 160, 220), (0, 0, w, h), width=2, border_radius=21)
-    # Removed top accent stripe
-    font = pygame.font.SysFont("arial", 20, bold=True)
-    txt = font.render(text, True, (220, 225, 235))
-    pill.blit(txt, (w // 2 - txt.get_width() // 2, h // 2 - txt.get_height() // 2))
-    surf.blit(pill, (x, y))
+    rect = pygame.Rect(x, y, w, 52)
+    draw_glass_panel(surf, rect, base_color=(26, 36, 64), border_color=UI_COLORS["accent"], radius=26)
+    font = get_font(20)
+    txt = font.render(text, True, (225, 232, 242))
+    surf.blit(txt, txt.get_rect(center=rect.center))
+
 
 def draw_score_pill(surf, score, x=30, y=24):
-    w, h = 220, 36
-    shadow = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0, 0, 0, 80), (0, 0, w, h), border_radius=18)
-    surf.blit(shadow, (x + 2, y + 3))
-    pill = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(pill, (24, 28, 48, 200), (0, 0, w, h), border_radius=18)
-    pygame.draw.rect(pill, (110, 130, 200, 220), (0, 0, w, h), width=2, border_radius=18)
-    # Removed left accent stripe for a cleaner look
-    font = pygame.font.SysFont("arial", 20, bold=True)
-    txt = font.render(f"Score {score}", True, (240, 245, 255))
-    pill.blit(txt, (18, h // 2 - txt.get_height() // 2))
-    surf.blit(pill, (x, y))
+    rect = pygame.Rect(x, y, 220, 74)
+    draw_glass_panel(surf, rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=22)
+    label = get_font(16).render("SCORE", True, (190, 208, 250))
+    value = get_font(34).render(f"{score}", True, (255, 255, 255))
+    surf.blit(label, (rect.x + 20, rect.y + 16))
+    pygame.draw.line(surf, (180, 200, 255), (rect.x + 20, rect.y + 30), (rect.x + rect.width - 20, rect.y + 30), 1)
+    surf.blit(value, (rect.x + 20, rect.y + 34))
 
 
 def draw_goal_progress_pill(surf, x, y, w, h, collected, goal):
-    shadow = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0, 0, 0, 80), (0, 0, w, h), border_radius=20)
-    surf.blit(shadow, (x + 2, y + 3))
-    pill = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(pill, (22, 26, 40, 200), (0, 0, w, h), border_radius=20)
-    pygame.draw.rect(pill, (120, 120, 160, 220), (0, 0, w, h), width=2, border_radius=20)
-    
-    # Text layout with proper vertical spacing
-    font = pygame.font.SysFont("arial", 16, bold=True)
-    label = f"Catch {goal} mushrooms to reach Level 2"
-    txt = font.render(label, True, (240, 250, 240))
-    pill.blit(txt, (12, 10))  # Top text with margin
-    
-    # Progress value text positioned on the right side at same height
-    val_txt = font.render(f"{collected}/{goal}", True, (220, 255, 220))
-    pill.blit(val_txt, (w - val_txt.get_width() - 12, 10))  # Right-aligned with margin
-    
-    # Progress bar positioned in the middle with adequate spacing from text
-    bar_margin = 12
-    bar_y = h // 2 + 8  # Positioned in lower half with spacing
-    bar_w = w - 2 * bar_margin
-    bar_h = 10  # Slightly thicker bar
+    rect = pygame.Rect(x, y, w, h)
+    draw_glass_panel(surf, rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=24)
+    header_font = get_font(16)
+    desc_font = get_font(18)
+    value_font = get_font(32)
     ratio = 0 if goal <= 0 else max(0.0, min(1.0, collected / goal))
-    
-    # Background bar
-    pygame.draw.rect(pill, (60, 60, 70), (bar_margin, bar_y, bar_w, bar_h), border_radius=5)
-    # Progress fill
-    fill_w = int(bar_w * ratio)
+
+    header = header_font.render("LEVEL 1 GOAL", True, (200, 220, 255))
+    surf.blit(header, (rect.x + 20, rect.y + 16))
+    description = desc_font.render("Catch glowing mushrooms to unlock the run", True, (225, 235, 255))
+    surf.blit(description, (rect.x + 20, rect.y + 46))
+    value_text = value_font.render(f"{collected}/{goal}", True, (255, 255, 255))
+    surf.blit(value_text, (rect.right - value_text.get_width() - 20, rect.y + 18))
+
+    bar_rect = pygame.Rect(rect.x + 20, rect.bottom - 32, rect.width - 40, 16)
+    pygame.draw.rect(surf, (18, 26, 44), bar_rect, border_radius=8)
+    fill_w = int(bar_rect.width * ratio)
     if fill_w > 0:
-        pygame.draw.rect(pill, (80, 220, 120), (bar_margin, bar_y, fill_w, bar_h), border_radius=5)
-    
-    surf.blit(pill, (x, y))
+        fill = pygame.Surface((fill_w, bar_rect.height), pygame.SRCALPHA)
+        draw_vertical_gradient(fill, (130, 230, 200, 230), (70, 200, 160, 230))
+        surf.blit(fill, (bar_rect.x, bar_rect.y))
+        highlight_h = max(2, bar_rect.height // 2)
+        if fill_w > 4:
+            pygame.draw.rect(
+                surf,
+                (255, 255, 255, 50),
+                (bar_rect.x + 2, bar_rect.y + 2, fill_w - 4, highlight_h),
+                border_radius=6,
+            )
+    pygame.draw.rect(surf, (150, 230, 200), bar_rect, 2, border_radius=8)
 
 
-def draw_lives_panel(surf, lives, heart_img, x, y):
-    w, h = 280, 64
-    shadow = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0, 0, 0, 80), (0, 0, w, h), border_radius=16)
-    surf.blit(shadow, (x + 2, y + 3))
-    panel = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(panel, (30, 18, 24, 200), (0, 0, w, h), border_radius=16)
-    pygame.draw.rect(panel, (200, 100, 140, 220), (0, 0, w, h), width=2, border_radius=16)
-    # Removed left accent stripe
-    font = pygame.font.SysFont("arial", 18, bold=True)
-    txt = font.render(f"Lives", True, (255, 235, 240))
-    panel.blit(txt, (14, 10))
-    count_txt = font.render(f"x{lives}", True, (255, 200, 220))
-    panel.blit(count_txt, (w - count_txt.get_width() - 12, 10))
-    # icons row
-    icon_size = 22
-    max_icons = min(lives, 8)
-    if heart_img:
-        try:
-            heart_small = pygame.transform.smoothscale(heart_img, (icon_size, icon_size))
-        except Exception:
-            heart_small = None
-        if heart_small:
-            for i in range(max_icons):
-                ix = 14 + i * (icon_size + 6)
-                iy = 32
-                glow = pygame.Surface((icon_size + 10, icon_size + 10), pygame.SRCALPHA)
-                pygame.draw.circle(glow, (255, 100, 150, 30), ((icon_size + 10) // 2, (icon_size + 10) // 2), (icon_size + 10) // 2)
-                panel.blit(glow, (ix - 5, iy - 5))
-                panel.blit(heart_small, (ix, iy))
-    else:
-        for i in range(max_icons):
-            ix = 14 + i * (icon_size + 6)
-            iy = 32
-            pygame.draw.circle(panel, (255, 100, 150), (ix + icon_size // 2, iy + icon_size // 2), icon_size // 2)
-    surf.blit(panel, (x, y))
+def draw_lives_panel(surf, lives, heart_icon, x, y):
+    rect = pygame.Rect(x, y, 280, 96)
+    draw_glass_panel(surf, rect, base_color=UI_COLORS["panel_alt"], border_color=UI_COLORS["danger"], radius=24)
+    label = get_font(16).render("LIVES", True, (255, 205, 220))
+    value = get_font(32).render(str(lives), True, (255, 240, 245))
+    surf.blit(label, (rect.x + 20, rect.y + 16))
+    surf.blit(value, (rect.right - value.get_width() - 24, rect.y + 18))
+
+    icon_size = 24
+    icons_to_show = min(lives, 6)
+    base_y = rect.y + rect.height - icon_size - 18
+    for i in range(icons_to_show):
+        ix = rect.x + 20 + i * (icon_size + 12)
+        glow = pygame.Surface((icon_size + 12, icon_size + 12), pygame.SRCALPHA)
+        pygame.draw.circle(
+            glow,
+            (255, 120, 160, 80),
+            (glow.get_width() // 2, glow.get_height() // 2),
+            glow.get_width() // 2,
+        )
+        surf.blit(glow, (ix - 6, base_y - 6))
+        if heart_icon:
+            if heart_icon.get_size() != (icon_size, icon_size):
+                icon_surface = pygame.transform.smoothscale(heart_icon, (icon_size, icon_size))
+            else:
+                icon_surface = heart_icon
+            surf.blit(icon_surface, (ix, base_y))
+        else:
+            pygame.draw.circle(
+                surf,
+                UI_COLORS["danger"],
+                (ix + icon_size // 2, base_y + icon_size // 2),
+                icon_size // 2,
+            )
 
 def draw_text_shadow(surf, text, size, x, y, color=(255,255,255), shadow_offset=(2,2), shadow_color=(0,0,0)):
-    font = pygame.font.SysFont("arial", size, bold=True)
+    font = get_font(size, bold=True)
     txt_shadow = font.render(text, True, shadow_color)
     rect_shadow = txt_shadow.get_rect(center=(x + shadow_offset[0], y + shadow_offset[1]))
     surf.blit(txt_shadow, rect_shadow)
@@ -275,12 +334,19 @@ def draw_text_shadow(surf, text, size, x, y, color=(255,255,255), shadow_offset=
     return rect
 
 def draw_button(surf, rect, label, hovered=False):
-    base = (70, 110, 80)
-    hover = (90, 140, 100)
+    rect = pygame.Rect(rect)
+    base = (70, 130, 220)
+    hover = (90, 170, 255)
     color = hover if hovered else base
-    pygame.draw.rect(surf, color, rect, border_radius=10)
-    pygame.draw.rect(surf, (220,220,220), rect, 2, border_radius=10)
-    draw_text_shadow(surf, label, 30, rect.centerx, rect.centery, (255,255,255))
+    draw_glass_panel(
+        surf,
+        rect,
+        base_color=color,
+        border_color=adjust_color(color, 60),
+        radius=rect.height // 2,
+        alpha=220,
+    )
+    draw_text_shadow(surf, label, 30, rect.centerx, rect.centery, (255, 255, 255))
 
 def draw_lives_hearts(surf, lives, x, y):
     spacing = 34
@@ -294,6 +360,18 @@ def draw_lives_hearts(surf, lives, x, y):
         else:
             pygame.draw.circle(surf, (255,100,150), (px+14, py+14), 14)
     draw_text_shadow(surf, f"x{lives}", 20, x + max_icons * spacing + 20, y + 14, (255,255,255))
+
+
+def get_menu_layout(width, height):
+    hero_w = max(360, min(760, width - 160))
+    hero_h = 260
+    hero_x = max(40, width // 2 - hero_w // 2)
+    ideal_y = height // 2 - hero_h // 2 - 20
+    hero_y = max(40, min(height - hero_h - 140, ideal_y))
+    hero_rect = pygame.Rect(hero_x, hero_y, hero_w, hero_h)
+    start_rect = pygame.Rect(hero_rect.centerx - 180, hero_rect.bottom - 92, 360, 70)
+    return hero_rect, start_rect
+
 
 def load_highscore():
     try:
@@ -335,6 +413,8 @@ mushroom_img = load_image("mushroom", (300,300))
 mushroom_player_img = load_image("mushroom_legs", (64,64))
 monster_img = load_image("monster", (56,56))
 heart_img = load_image("heart", (28,28))
+heart_icon_small = pygame.transform.smoothscale(heart_img, (24, 24)) if heart_img else None
+heart_icon_status = pygame.transform.smoothscale(heart_img, (26, 26)) if heart_img else None
 
 # Load Sounds
 collect_snd = load_sound("collect")
@@ -620,15 +700,19 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             # Enable mouse click on Start button in the menu
             if state == MENU and event.button == 1:
-                start_rect = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 + 50, 300, 70)
+                _, start_rect = get_menu_layout(WIDTH, HEIGHT)
                 if start_rect.collidepoint(event.pos):
                     start_level1()
 
     if paused and state not in (GAMEOVER, WIN):
-        # Draw paused overlay and skip updates
-        screen.fill((20, 20, 20))
-        draw_text_shadow(screen, "PAUSED", 92, WIDTH//2, HEIGHT//2, (255,255,255))
-        draw_text_shadow(screen, "Press P to Resume", 28, WIDTH//2, HEIGHT//2+80, (220,220,220))
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        draw_vertical_gradient(overlay, (12, 18, 30, 210), (6, 10, 20, 230))
+        screen.blit(overlay, (0, 0))
+        panel_rect = pygame.Rect(WIDTH//2 - 240, HEIGHT//2 - 140, 480, 220)
+        draw_glass_panel(screen, panel_rect, base_color=UI_COLORS["panel"], border_color=UI_COLORS["accent"], radius=28)
+        draw_text_shadow(screen, "Paused", 72, panel_rect.centerx, panel_rect.y + 90, (255, 255, 255))
+        draw_text_shadow(screen, "Press P to resume", 26, panel_rect.centerx, panel_rect.y + 150, (220, 230, 255))
+        draw_text_shadow(screen, "Press ESC to quit", 20, panel_rect.centerx, panel_rect.y + 190, (200, 210, 230))
         pygame.display.flip()
         continue
 
@@ -1096,9 +1180,14 @@ while running:
                 highscore = score
 
         # Draw Level 2 scene
-        screen.blit(level2_bg, (bg_scroll_x, 0)) if level2_bg else screen.fill((100, 180, 240))
         if level2_bg:
+            screen.blit(level2_bg, (bg_scroll_x, 0))
             screen.blit(level2_bg, (bg_scroll_x + WIDTH, 0))
+        else:
+            draw_vertical_gradient(screen, (26, 48, 86), (8, 14, 32))
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        draw_vertical_gradient(overlay, (10, 18, 32, 100), (4, 6, 16, 160))
+        screen.blit(overlay, (0, 0))
 
         ground_color = (80, 160, 80)
         pygame.draw.rect(screen, ground_color, (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
